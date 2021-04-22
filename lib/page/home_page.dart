@@ -7,6 +7,7 @@ import 'package:airportapp/shared/spaces.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:modal_progress_hud/modal_progress_hud.dart';
 import 'package:photo_view/photo_view.dart';
 
 import '../main.dart';
@@ -22,48 +23,53 @@ class _HomePageState extends State<HomePage> {
   HomeProvider provider= HomeProvider();
   Position currentPosition;
   Data data;
-
+  bool isLoading= false;
 
 
   @override
   void initState() {
     super.initState();
     getCurrentLocation();
+    provider.getMap();
   }
 
   @override
   void dispose() {
+    positionStream?.cancel();
+    provider?.dispose();
     super.dispose();
-    positionStream.cancel();
   }
 
   @override
   Widget build(BuildContext context) {
 
-    return SafeArea(
-      child: Scaffold(
-        body:  FutureBuilder<Data>(
-          future: provider.getMap(),
-          builder: (context, AsyncSnapshot<Data> snapshot){
+    return ModalProgressHUD(
+      inAsyncCall: isLoading,
+      child: SafeArea(
+        child: Scaffold(
+          body:  StreamBuilder<Data>(
+            stream: provider.mapStream.stream,
+            builder: (context, AsyncSnapshot<Data> snapshot){
 
-            if(snapshot.hasData && snapshot.data!=null){
-              data= snapshot.data;
-              return Stack(
-                children: [
-                  PhotoView(
-                    imageProvider:
-                    CachedNetworkImageProvider('$urlBase/${data.map.image}'),
-                  ),
+              if(snapshot.hasData && snapshot.data!=null){
+                data= snapshot.data;
+                return Stack(
+                  children: [
+                    PhotoView(
+                      imageProvider:
+                      CachedNetworkImageProvider('$urlBase/${data.map.image}'),
+                    ),
 
-                  _buildLocation(),
+                    _buildLocation(),
 
-                  _buildPins(data.pins)
-                ],
-              );
-            }
-            return Container();
-          },
+                    _buildPins(data.pins)
+                  ],
+                );
+              }
+              return Container();
+            },
 
+          ),
         ),
       ),
     );
@@ -99,7 +105,7 @@ class _HomePageState extends State<HomePage> {
 
     return InkResponse(
       onTap: (){
-        showInfoDialog('¿Estas en ${pin.name}?', onConfirm: onConfirm(pin), confirmTitle: 'SI', cancelTitle: 'NO', cancelAction: true);
+        showInfoDialog('¿Estas en ${pin.name}?', onConfirm: ()=>onConfirm(pin), confirmTitle: 'SI', cancelTitle: 'NO', cancelAction: true);
       },
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -192,9 +198,18 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  onConfirm(PinModel pin) {
-    var result= provider.setPoint(pin, currentPosition.latitude, currentPosition.longitude, currentPosition.accuracy);
+  onConfirm(PinModel pin) async {
+    setState(() {
+      isLoading= true;
+    });
 
+    var result= await provider.setPoint(pin, currentPosition.latitude, currentPosition.longitude, currentPosition.accuracy);
+    await provider.getMap();
+    print('set point $result');
+
+    setState(() {
+      isLoading= false;
+    });
   }
 
 
